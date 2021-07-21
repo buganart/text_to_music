@@ -8,6 +8,7 @@ import glob
 import keras
 import os
 import click
+import wandb
 from pathlib import Path
 from tensorflow.keras import backend
 from music21 import converter, instrument, note, chord, stream
@@ -144,7 +145,9 @@ def create_midi(prediction_output, filename):
 
 
 class GAN:
-    def __init__(self, data_path, seq_length, latent_dim=1000, lr=0.0002):
+    def __init__(
+        self, data_path, seq_length, latent_dim=1000, lr=0.0002, resume_id=None
+    ):
         self.seq_length = seq_length
         self.seq_shape = (self.seq_length, 1)
         self.latent_dim = latent_dim
@@ -180,6 +183,14 @@ class GAN:
         # Trains the generator to fool the discriminator
         self.combined = Model(z, validity)
         self.combined.compile(loss="binary_crossentropy", optimizer=optimizer)
+
+        if resume_id:
+            restored_file1 = wandb.restore("cgan_generator.h5")
+            self.generator.load_weights(restored_file1.name)
+            restored_file2 = wandb.restore("cgan_discriminator.h5")
+            self.discriminator.load_weights(restored_file2.name)
+            restored_file3 = wandb.restore("cgan_combined.h5")
+            self.combined.load_weights(restored_file3.name)
 
     def get_generator(self):
         return self.generator
@@ -237,8 +248,10 @@ class GAN:
         epochs,
         batch_size=128,
         print_interval=50,
+        num_samples_per_class=3,
         save_interval=1000,
         exp_path="results",
+        start_epoch=1,
     ):
 
         # Load and convert the data
@@ -253,7 +266,7 @@ class GAN:
         fake = np.zeros((batch_size, 1))
 
         # Training the model
-        for epoch in range(epochs):
+        for epoch in range(start_epoch, epochs + 1):
 
             # Training the discriminator
             # Select a random batch of note sequences
@@ -293,13 +306,23 @@ class GAN:
             if epoch % save_interval == 0:
                 # save the generator model
                 self.generator.save_weights("cgan_generator.h5")
+                wandb.save("cgan_generator.h5")
+                self.discriminator.save_weights("cgan_discriminator.h5")
+                wandb.save("cgan_discriminator.h5")
+                self.combined.save_weights("cgan_combined.h5")
+                wandb.save("cgan_combined.h5")
                 self.plot_loss()
                 # generate samples
-                for i in range(10):
-                    for j in range(4):
-                        self.generate(exp_path, j + 1, i + 1)
 
-    def generate(self, exp_path, emotion, out_index):
+                for j in range(len(self.class_list)):
+                    audioList = []
+                    class_name = self.class_list[j]
+                    for i in range(num_samples_per_class):
+                        wandbAudio = self.generate(exp_path, j, i + 1, True)
+                        audioList.append(wandbAudio)
+                    wandb.log({f"samples_{class_name}_{j}": audioList})
+
+    def generate(self, exp_path, emotion, out_index, wandbLog=True):
         # Get pitch names and store in a dictionary
         pitchnames = sorted(set(note for note, emotion in self.note_to_emotion))
         # Create a dictionary to map pitches to integers
@@ -317,11 +340,14 @@ class GAN:
         ]
         pred_notes = [int_to_note[int(x)] for x in pred_notes]
 
-        filename = Path(exp_path) / (
-            "gan_generated_{self.class_list[emotion]}_{out_index}"
+        filename = str(
+            Path(exp_path) / (f"gan_generated_{self.class_list[emotion]}_{out_index}")
         )
 
-        return create_midi(pred_notes, filename)
+        create_midi(pred_notes, filename)
+        if wandbLog:
+            return wandb.Audio(filename + ".mid")
+        return None
 
     def plot_loss(self):
         plt.plot(self.disc_loss, c="red")
@@ -335,25 +361,95 @@ class GAN:
 
 
 @click.command()
+@click.option("--resume_id", default=None, help="AAA")
 @click.option("--exp_path", default="results", help="AAA")
 @click.option("--data_path", default="../data", help="AAA")
 @click.option("--seq_length", default=100, help="AAA")
 @click.option("--latent_dim", default=1000, help="AAA")
 @click.option("--lr", default=0.0002, help="AAA")
 @click.option("--batch_size", default=32, help="AAA")
+@click.option("--num_samples_per_class", default=3, help="AAA")
 @click.option("--save_interval", default=1000, help="AAA")
-def main(exp_path, data_path, seq_length, latent_dim, lr, batch_size, save_interval):
-    gan = GAN(data_path=data_path, seq_length=seq_length, latent_dim=latent_dim, lr=lr)
+def main(
+    resume_id,
+    exp_path,
+    data_path,
+    seq_length,
+    latent_dim,
+    lr,
+    batch_size,
+    num_samples_per_class,
+    save_interval,
+):
+    args = dict(
+        zip(
+            [
+                "exp_path",
+                "data_path",
+                "seq_length",
+                "latent_dim",
+                "lr",
+                "batch_size",
+                "num_samples_per_class",
+                "save_interval",
+            ],
+            [
+                exp_path,
+                data_path,
+                seq_length,
+                latent_dim,
+                lr,
+                batch_size,
+                num_samples_per_class,
+                save_interval,
+            ],
+        )
+    )
+    start_epoch = 1
+    if resume_id:
+        print(f"Resuming run ID {resume_id}.")
+        api = wandb.Api()
+        previous_run = api.run(f"bugan/game_music_cgan/{resume_id}")
+        start_epoch = previous_run.lastHistoryStep
+        args = argparse.Namespace(**previous_run.config)
+    exp_path = args["exp_path"]
+    data_path = args["data_path"]
+    seq_length = args["seq_length"]
+    latent_dim = args["latent_dim"]
+    lr = args["lr"]
+    batch_size = args["batch_size"]
+    num_samples_per_class = args["num_samples_per_class"]
+    save_interval = args["save_interval"]
+
+    # start run
+    wandb.init(
+        entity="bugan",
+        project="game_music_cgan",
+        id=resume_id,
+        config=args,
+        resume=True if resume_id else False,
+        save_code=True,
+        dir=exp_path,
+    )
+
+    exp_path = Path(exp_path)
+    exp_path.mkdir(parents=True, exist_ok=True)
+    gan = GAN(
+        data_path=data_path,
+        seq_length=seq_length,
+        latent_dim=latent_dim,
+        lr=lr,
+        resume_id=resume_id,
+    )
     gan.train(
-        epochs=1000,
+        epochs=10000000,
         batch_size=batch_size,
-        print_interval=10,
+        print_interval=50,
+        num_samples_per_class=num_samples_per_class,
         save_interval=save_interval,
         exp_path=exp_path,
+        start_epoch=start_epoch,
     )
-    # for i in range(10):
-    #     for j in range(4):
-    #         gan.generate(j + 1, i + 1)
 
 
 if __name__ == "__main__":

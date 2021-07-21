@@ -31,10 +31,11 @@ class CustomDense(Dense):
     def call(self, inputs):
         output = K.dot(inputs, K.softmax(self.kernel, axis=-1))
         if self.use_bias:
-            output = K.bias_add(output, self.bias, data_format='channels_last')
+            output = K.bias_add(output, self.bias, data_format="channels_last")
         if self.activation:
             output = self.activation(output)
         return output
+
 
 # define the standalone discriminator model
 # @network_input: music input
@@ -53,9 +54,9 @@ def define_discriminator(latent_dim, vocab_size, n_classes=10):
     print("merge: ", merge.shape)
     # LSTM
     fe = LSTM(
-        256, # units, dimensionality of the output space.
+        256,  # units, dimensionality of the output space.
         input_shape=merge.shape,
-        return_sequences=True
+        return_sequences=True,
     )(merge)
     fe = Dropout(0.3)(fe)
     # downsample
@@ -69,13 +70,14 @@ def define_discriminator(latent_dim, vocab_size, n_classes=10):
     # dropout
     fe = Dropout(0.4)(fe)
     # output
-    out_layer = Dense(1, activation='sigmoid')(fe)
+    out_layer = Dense(1, activation="sigmoid")(fe)
     # define model
     model = Model([in_music, in_label], out_layer)
     # compile model
     opt = Adam(lr=0.0002, beta_1=0.5)
-    model.compile(loss='binary_crossentropy', optimizer=opt, metrics=['accuracy'])
+    model.compile(loss="binary_crossentropy", optimizer=opt, metrics=["accuracy"])
     return model
+
 
 # define the standalone generator model
 # @latent_dim: input dimension of the noise
@@ -96,9 +98,9 @@ def define_generator(latent_dim, vocab_size, n_classes=10, output_dim=10):
     print("merge: ", merge.shape)
     # LSTM
     gen = LSTM(
-        256, # units, dimensionality of the output space.
+        256,  # units, dimensionality of the output space.
         input_shape=merge.shape,
-        return_sequences=True
+        return_sequences=True,
     )(merge)
     gen = Dropout(rate=0.7)(gen)
     # LSTM
@@ -110,9 +112,10 @@ def define_generator(latent_dim, vocab_size, n_classes=10, output_dim=10):
     gen = LSTM(256, return_sequences=True)(gen)
     gen = Dense(vocab_size)(gen)
     # 11, 50
-    out_layer = CustomDense(50, use_bias=False, activation='softmax')(gen)
+    out_layer = CustomDense(50, use_bias=False, activation="softmax")(gen)
     model = Model([in_music, in_label], out_layer)
     return model
+
 
 # define the combined generator and discriminator model, for updating the generator
 def define_gan(g_model, d_model):
@@ -128,11 +131,22 @@ def define_gan(g_model, d_model):
     model = Model([gen_noise, gen_label], gan_output)
     # compile model
     opt = Adam(lr=0.0002, beta_1=0.5)
-    model.compile(loss='binary_crossentropy', optimizer=opt)
+    model.compile(loss="binary_crossentropy", optimizer=opt)
     return model
 
+
 # train the generator and discriminator
-def train(g_model, d_model, gan_model, dataset, latent_dim, int_to_note, vocab_size, n_epochs=100, n_batch=128):
+def train(
+    g_model,
+    d_model,
+    gan_model,
+    dataset,
+    latent_dim,
+    int_to_note,
+    vocab_size,
+    n_epochs=100,
+    n_batch=128,
+):
     bat_per_epo = int(dataset[0].shape[0] / n_batch)
     half_batch = int(n_batch / 2)
     # manually enumerate epochs
@@ -140,21 +154,29 @@ def train(g_model, d_model, gan_model, dataset, latent_dim, int_to_note, vocab_s
         # enumerate batches over the training set
         for j in range(bat_per_epo):
             # get randomly selected 'real' samples
-            [X_real, labels_real], y_real = generate_data.generate_real_samples(dataset, half_batch, vocab_size)
+            [X_real, labels_real], y_real = generate_data.generate_real_samples(
+                dataset, half_batch, vocab_size
+            )
             # update discriminator model weights
             d_loss1, _ = d_model.train_on_batch([X_real, labels_real], y_real)
             # generate 'fake' examples
-            [X_fake, labels], y_fake = generate_data.generate_fake_samples(g_model, latent_dim, half_batch, int_to_note, vocab_size)
+            [X_fake, labels], y_fake = generate_data.generate_fake_samples(
+                g_model, latent_dim, half_batch, int_to_note, vocab_size
+            )
             # update discriminator model weights
             d_loss2, _ = d_model.train_on_batch([X_fake, labels], y_fake)
             # prepare points in latent space as input for the generator
-            [z_input, labels_input] = generate_data.generate_latent_points(latent_dim, n_batch, vocab_size)
+            [z_input, labels_input] = generate_data.generate_latent_points(
+                latent_dim, n_batch, vocab_size
+            )
             # create inverted labels for the fake samples
             y_gan = ones((n_batch, 1))
             # update the generator via the discriminator's error
             g_loss = gan_model.train_on_batch([z_input, labels_input], y_gan)
             # summarize loss on this batch
-            print('>%d, %d/%d, d1=%.3f, d2=%.3f g=%.3f' %
-                (i+1, j+1, bat_per_epo, d_loss1, d_loss2, g_loss))
+            print(
+                ">%d, %d/%d, d1=%.3f, d2=%.3f g=%.3f"
+                % (i + 1, j + 1, bat_per_epo, d_loss1, d_loss2, g_loss)
+            )
     # save the generator model
-    g_model.save_weights('cgan_generator.h5')
+    g_model.save_weights("cgan_generator.h5")

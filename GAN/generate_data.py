@@ -15,8 +15,9 @@ def load_real_samples():
     (trainX, trainy) = load_dataset()
     print("load_real_samples", trainX.shape, trainy.shape)
     # convert from ints to floats
-    X = trainX.astype('float32')
+    X = trainX.astype("float32")
     return [X, trainy]
+
 
 # # select real samples
 def generate_real_samples(dataset, n_samples, vocab_size):
@@ -31,17 +32,19 @@ def generate_real_samples(dataset, n_samples, vocab_size):
     y = ones((n_samples, 1))
     return [X, labels], y
 
+
 # generate points in latent space as input for the generator
 def generate_latent_points(latent_dim, n_samples, vocab_size, n_classes=10):
     # generate points in the latent space
-    x_input = randint(vocab_size, size=(n_samples, latent_dim)).astype('float32')
+    x_input = randint(vocab_size, size=(n_samples, latent_dim)).astype("float32")
     print("x_input: ", x_input)
     # 64, 10, 50
     z_input = to_categorical(x_input, num_classes=vocab_size)
     # generate labels
     labels = randint(0, n_classes, n_samples)
-    #(64, 10, 50) (64,)
+    # (64, 10, 50) (64,)
     return [z_input, labels]
+
 
 # use the generator to generate n fake examples, with class labels
 def generate_fake_samples(generator, latent_dim, n_samples, int_to_note, vocab_size):
@@ -70,21 +73,21 @@ def get_notes():
     for file in glob.glob("../data/midi/*.mid"):
         midi = converter.parse(file)
         song_index = int(os.path.splitext(os.path.basename(file))[0])
-        #print("Parsing %s with an index %d" % (file, song_index))
+        # print("Parsing %s with an index %d" % (file, song_index))
 
         notes_to_parse = None
         notes = []
-        try: # file has instrument parts
+        try:  # file has instrument parts
             s2 = instrument.partitionByInstrument(midi)
             notes_to_parse = s2.parts[0].recurse()
-        except: # file has notes in a flat structure
+        except:  # file has notes in a flat structure
             notes_to_parse = midi.flat.notes
 
         for element in notes_to_parse:
             if isinstance(element, note.Note):
                 notes.append(str(element.pitch))
             elif isinstance(element, chord.Chord):
-                notes.append('.'.join(str(n) for n in element.normalOrder))
+                notes.append(".".join(str(n) for n in element.normalOrder))
 
         song_index_to_notes[song_index] = notes
 
@@ -95,7 +98,7 @@ def get_notes():
 # @song_index_to_emotion: music index (int) to emotion mapping.def get_emotions():
 def get_emotions():
     """ Read the design matrix csv file, returns a mapping from file name to emotions"""
-    with open('../data/design_matrix.csv', mode='r') as csv_file:
+    with open("../data/design_matrix.csv", mode="r") as csv_file:
         csv_reader = csv.DictReader(csv_file)
         line_count = 0
         song_index_to_emotion = {}
@@ -103,14 +106,15 @@ def get_emotions():
             if line_count == 0:
                 print(f'Column names are {", ".join(row)}')
                 line_count += 1
-            #print(f'Music file {row["Nro"]} is with mode {row["Melody"]}.')
+            # print(f'Music file {row["Nro"]} is with mode {row["Melody"]}.')
             line_count += 1
             song_index_to_emotion[int(row["Nro"])] = row["Melody"]
 
-        #print(f'Processed {line_count} lines.')
-        #print("song_index_to_emotion size: ", len(song_index_to_emotion))
+        # print(f'Processed {line_count} lines.')
+        # print("song_index_to_emotion size: ", len(song_index_to_emotion))
 
-        return song_index_to_emotion;
+        return song_index_to_emotion
+
 
 # Return int_to_note mapping and vocab_size
 def create_int_to_note_mapping():
@@ -125,8 +129,9 @@ def create_int_to_note_mapping():
 
     for number, note in enumerate(pitchnames):
         int_to_note[number] = note
-  
-    return int_to_note, len(int_to_note);
+
+    return int_to_note, len(int_to_note)
+
 
 # Generate input from real data to the discriminator
 # Input:
@@ -153,7 +158,7 @@ def load_dataset(sequence_length=10):
         # create a dictionary to map pitches to integers
         note_to_int = dict((note, number) for number, note in enumerate(pitchnames))
         for i in range(0, int(len(notes)) - sequence_length):
-            music_in = notes[i: i + sequence_length]
+            music_in = notes[i : i + sequence_length]
             train_x.append([note_to_int[char] for char in music_in])
             train_y.append(emotion)
 

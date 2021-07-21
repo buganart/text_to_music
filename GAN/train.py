@@ -16,4 +16,6 @@ d_model = conditional_gan.define_discriminator(latent_dim, vocab_size)
 gan_model = conditional_gan.define_gan(g_model, d_model)
 
 # train model
-conditional_gan.train(g_model, d_model, gan_model, dataset, latent_dim, int_to_note, vocab_size, 100)
+conditional_gan.train(
+    g_model, d_model, gan_model, dataset, latent_dim, int_to_note, vocab_size, 100
+)

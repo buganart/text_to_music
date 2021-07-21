@@ -7,6 +7,7 @@ import pickle
 import glob
 import keras
 import os
+import click
 from pathlib import Path
 from tensorflow.keras import backend
 from music21 import converter, instrument, note, chord, stream
@@ -26,7 +27,7 @@ from tensorflow.keras.utils import plot_model
 def read_note_from_file(filename, emotion):
     midi = converter.parse(filename)
     note_to_emotion = []
-    print("Parsing %s" % filename)
+    print(f"Parsing label {emotion} for file {filename}...")
 
     notes_to_parse = None
 
@@ -194,7 +195,7 @@ class GAN:
         model.add(LeakyReLU(alpha=0.2))
         model.add(Dense(1, activation="sigmoid"))
         model.summary()
-        pl_model(
+        plot_model(
             model,
             to_file="discriminator_plot.png",
             show_shapes=True,
@@ -222,7 +223,7 @@ class GAN:
         model.add(Dense(np.prod(self.seq_shape), activation="tanh"))
         model.add(Reshape(self.seq_shape))
         model.summary()
-        plotodel(
+        plot_model(
             model, to_file="generator_plot.png", show_shapes=True, show_layer_names=True
         )
 
@@ -231,7 +232,14 @@ class GAN:
 
         return Model(noise, seq)
 
-    def train(self, epochs, batch_size=128, print_interval=50):
+    def train(
+        self,
+        epochs,
+        batch_size=128,
+        print_interval=50,
+        save_interval=1000,
+        exp_path="results",
+    ):
 
         # Load and convert the data
         n_vocab = len(set([note for note, emotion in self.note_to_emotion]))
@@ -281,11 +289,17 @@ class GAN:
                 )
                 self.disc_loss.append(d_loss[0])
                 self.gen_loss.append(g_loss)
-        # save the generator model
-        self.generator.save_weights("cgan_generator.h5")
-        self.plot_loss()
 
-    def generate(self, emotion, out_index):
+            if epoch % save_interval == 0:
+                # save the generator model
+                self.generator.save_weights("cgan_generator.h5")
+                self.plot_loss()
+                # generate samples
+                for i in range(10):
+                    for j in range(4):
+                        self.generate(exp_path, j + 1, i + 1)
+
+    def generate(self, exp_path, emotion, out_index):
         # Get pitch names and store in a dictionary
         pitchnames = sorted(set(note for note, emotion in self.note_to_emotion))
         # Create a dictionary to map pitches to integers
@@ -298,12 +312,16 @@ class GAN:
         noise = np.concatenate((music_noise, emotion_noise), axis=1)
         predictions = self.generator.predict(noise)
 
-        pred_notes = [x * 242 + 242 for x in predictions[0]]
+        pred_notes = [
+            x * len(pitchnames) / 2 + len(pitchnames) / 2 - 0.5 for x in predictions[0]
+        ]
         pred_notes = [int_to_note[int(x)] for x in pred_notes]
 
-        return create_midi(
-            pred_notes, "results/gan_final_" + str(emotion) + "_" + str(out_index)
+        filename = Path(exp_path) / (
+            "gan_generated_{self.class_list[emotion]}_{out_index}"
         )
+
+        return create_midi(pred_notes, filename)
 
     def plot_loss(self):
         plt.plot(self.disc_loss, c="red")
@@ -316,9 +334,27 @@ class GAN:
         plt.close()
 
 
+@click.command()
+@click.option("--exp_path", default="results", help="AAA")
+@click.option("--data_path", default="../data", help="AAA")
+@click.option("--seq_length", default=100, help="AAA")
+@click.option("--latent_dim", default=1000, help="AAA")
+@click.option("--lr", default=0.0002, help="AAA")
+@click.option("--batch_size", default=32, help="AAA")
+@click.option("--save_interval", default=1000, help="AAA")
+def main(exp_path, data_path, seq_length, latent_dim, lr, batch_size, save_interval):
+    gan = GAN(data_path=data_path, seq_length=seq_length, latent_dim=latent_dim, lr=lr)
+    gan.train(
+        epochs=1000,
+        batch_size=batch_size,
+        print_interval=10,
+        save_interval=save_interval,
+        exp_path=exp_path,
+    )
+    # for i in range(10):
+    #     for j in range(4):
+    #         gan.generate(j + 1, i + 1)
+
+
 if __name__ == "__main__":
-    gan = GAN(seq_length=100)
-    gan.train(epochs=1000, batch_size=32, print_interval=1)
-    for i in range(10):
-        for j in range(4):
-            gan.generate(j + 1, i + 1)
+    main()

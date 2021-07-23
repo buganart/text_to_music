@@ -9,6 +9,7 @@ import keras
 import os
 import click
 import wandb
+import argparse
 from pathlib import Path
 from tensorflow.keras import backend
 from music21 import converter, instrument, note, chord, stream
@@ -302,6 +303,7 @@ class GAN:
                 )
                 self.disc_loss.append(d_loss[0])
                 self.gen_loss.append(g_loss)
+                wandb.log({"D loss": d_loss[0], "acc":100 * d_loss[1], "G loss":g_loss}, step=epoch)
 
             if epoch % save_interval == 0:
                 # save the generator model
@@ -320,7 +322,7 @@ class GAN:
                     for i in range(num_samples_per_class):
                         wandbAudio = self.generate(exp_path, j, i + 1, True)
                         audioList.append(wandbAudio)
-                    wandb.log({f"samples_{class_name}_{j}": audioList})
+                    wandb.log({f"samples_{class_name}_{j}": audioList}, step=epoch)
 
     def generate(self, exp_path, emotion, out_index, wandbLog=True):
         # Get pitch names and store in a dictionary
@@ -411,7 +413,10 @@ def main(
         api = wandb.Api()
         previous_run = api.run(f"bugan/game_music_cgan/{resume_id}")
         start_epoch = previous_run.lastHistoryStep
-        args = argparse.Namespace(**previous_run.config)
+        args = vars(argparse.Namespace(**previous_run.config))
+        # match start_epoch with save_interval
+        start_epoch = start_epoch - (start_epoch % args["save_interval"])
+        print(f"restart from epoch {start_epoch}...")
     exp_path = args["exp_path"]
     data_path = args["data_path"]
     seq_length = args["seq_length"]
